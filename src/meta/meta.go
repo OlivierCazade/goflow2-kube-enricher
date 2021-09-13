@@ -33,6 +33,7 @@ type Informers struct {
 	pods            cache.SharedIndexInformer
 	services        cache.SharedIndexInformer
 	replicaSet      cache.SharedIndexInformer
+	nodes           cache.SharedIndexInformer
 }
 
 func NewInformers(client kubernetes.Interface) Informers {
@@ -68,11 +69,30 @@ func NewInformers(client kubernetes.Interface) Informers {
 	}); err != nil {
 		panic(err)
 	}
+
+	nodes := factory.Core().V1().Nodes().Informer()
+	if err := nodes.AddIndexers(map[string]cache.IndexFunc{
+		IndexIP: func(obj interface{}) ([]string, error) {
+			ips := make([]string, 0, len(obj.(*corev1.Node).Status.Addresses))
+			for _, ip := range obj.(*corev1.Node).Status.Addresses {
+				if ip.Type == "Hostname" {
+					// ignoring Hostname type
+					continue
+				}
+				ips = append(ips, ip.Address)
+			}
+			return ips, nil
+		},
+	}); err != nil {
+		panic(err)
+	}
+
 	return Informers{
 		informerFactory: factory,
 		pods:            pods,
 		services:        services,
 		replicaSet:      factory.Apps().V1().ReplicaSets().Informer(),
+		nodes:           nodes,
 	}
 }
 
@@ -105,6 +125,27 @@ func (s *Informers) PodByIP(ip string) (*corev1.Pod, bool) {
 		}).Warn("multiple pods for a single IP. Returning the first pod and ignoring the rest")
 	}
 	return item[0].(*corev1.Pod), true
+}
+
+func (s *Informers) NodeByIP(ip string) (*corev1.Node, bool) {
+	item, err := s.nodes.GetIndexer().ByIndex(IndexIP, ip)
+	if err != nil {
+		// should never happen as long as we provide the correct index function
+		// otherwise it's a bug in our code
+		panic(err)
+	}
+	if len(item) == 0 {
+		// not found
+		return nil, false
+	}
+	// we assume a 1:1 relation between Service and ClusterIP
+	if len(item) > 1 {
+		ilog.WithFields(logrus.Fields{
+			"ip":      ip,
+			"results": len(item),
+		}).Warn("multiple nodes for a single IP. Returning the first node and ignoring the rest")
+	}
+	return item[0].(*corev1.Node), true
 }
 
 func (s *Informers) ServiceByIP(ip string) (*corev1.Service, bool) {
@@ -155,6 +196,10 @@ func (s *Informers) DebugInfo(out io.Writer) {
 	for _, pod := range s.pods.GetStore().ListKeys() {
 		fmt.Fprintln(out, "-", pod)
 	}
+	fmt.Fprintln(out, "==== Nodes")
+	for _, node := range s.nodes.GetStore().ListKeys() {
+		fmt.Fprintln(out, "-", node)
+	}
 	fmt.Fprintln(out, "=== Pods by IP")
 	for _, ip := range s.pods.GetIndexer().ListIndexFuncValues(IndexIP) {
 		pod, _ := s.PodByIP(ip)
@@ -175,4 +220,10 @@ func (s *Informers) DebugInfo(out io.Writer) {
 			fmt.Fprintln(out, "-", ip, "not found in index")
 		}
 	}
+	fmt.Fprintln(out, "=== Nodes by IP")
+	for _, ip := range s.nodes.GetIndexer().ListIndexFuncValues(IndexIP) {
+		node, _ := s.NodeByIP(ip)
+		fmt.Fprintln(out, "-", ip, ":", node.Name)
+	}
+
 }

@@ -167,6 +167,8 @@ func enrich(informers meta.Informers, rawRecord []byte, mapping []fieldMapping) 
 		} else if svc, ok := informers.ServiceByIP(ip); ok {
 			// If there is no Pod for such IP, we try searching for a service
 			enrichService(informers, ip, record, fieldMap, svc)
+		} else if node, ok := informers.NodeByIP(ip); ok {
+			enrichNode(informers, ip, record, fieldMap, node)
 		} else {
 			log.Warnf("Failed to find Ip owner [ip=%v]", ip)
 		}
@@ -210,6 +212,12 @@ func enrichPod(informers meta.Informers, record map[string]interface{}, fieldMap
 	if len(warnings) > 0 {
 		record[fieldMap.prefixOut+"Warn"] = strings.Join(warnings, "; ")
 	}
+}
+
+func enrichNode(informers meta.Informers, ip string, record map[string]interface{}, fieldMap fieldMapping, node *v1.Node) {
+
+	record[fieldMap.prefixOut+"Workload"] = node.Name
+	record[fieldMap.prefixOut+"WorkloadKind"] = "Node"
 }
 
 func checkTooMany(warnings []string, kind, ref string, items interface{}, size int, nameFunc func(interface{}, int) string) []string {

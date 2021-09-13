@@ -76,6 +76,7 @@ rules:
   - pods
   - replicasets
   - services
+  - nodes
   verbs:
   - list
   - get
