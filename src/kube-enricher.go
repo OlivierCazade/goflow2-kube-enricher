@@ -164,24 +164,22 @@ func enrich(informers meta.Informers, rawRecord []byte, mapping []fieldMapping) 
 		}
 		if pod, ok := informers.PodByIP(ip); ok {
 			enrichPod(informers, record, fieldMap, pod)
-		} else {
+		} else if svc, ok := informers.ServiceByIP(ip); ok {
 			// If there is no Pod for such IP, we try searching for a service
-			enrichService(informers, ip, record, fieldMap)
+			enrichService(informers, ip, record, fieldMap, svc)
+		} else {
+			log.Warnf("Failed to find Ip owner [ip=%v]", ip)
 		}
 	}
 
 	return json.Marshal(record)
 }
 
-func enrichService(informers meta.Informers, ip string, record map[string]interface{}, fieldMap fieldMapping) {
-	svc, ok := informers.ServiceByIP(ip)
-	if !ok {
-		log.Warnf("Failed to get Service [ip=%v]", ip)
-	} else {
-		record[fieldMap.prefixOut+"Workload"] = svc.Name
-		record[fieldMap.prefixOut+"WorkloadKind"] = "Service"
-		record[fieldMap.prefixOut+"Namespace"] = svc.Namespace
-	}
+func enrichService(informers meta.Informers, ip string, record map[string]interface{}, fieldMap fieldMapping, svc *v1.Service) {
+
+	record[fieldMap.prefixOut+"Workload"] = svc.Name
+	record[fieldMap.prefixOut+"WorkloadKind"] = "Service"
+	record[fieldMap.prefixOut+"Namespace"] = svc.Namespace
 }
 
 func enrichPod(informers meta.Informers, record map[string]interface{}, fieldMap fieldMapping, pod *v1.Pod) {
