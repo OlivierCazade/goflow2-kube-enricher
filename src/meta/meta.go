@@ -44,10 +44,7 @@ func NewInformers(client kubernetes.Interface) Informers {
 			pod := obj.(*corev1.Pod)
 			ips := make([]string, 0, len(pod.Status.PodIPs))
 			for _, ip := range pod.Status.PodIPs {
-				// ignoring host-networked Pod IPs
-				if ip.IP != pod.Status.HostIP {
-					ips = append(ips, ip.IP)
-				}
+				ips = append(ips, ip.IP)
 			}
 			return ips, nil
 		},
